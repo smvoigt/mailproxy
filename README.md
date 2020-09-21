@@ -31,3 +31,13 @@ smtp_auth = yes
 smtp_auth_user = USERNAME
 smtp_auth_password = PASSWORD
 ```
+
+
+# Install as a service
+- Install python3.8 for all users
+- pip install aiosmtpd pywin32
+- pywin32_postinstall.py -install
+- python <full_path>/mailproxy.py install
+- python <full_path>/mailproxy.py start
+
+make sure config.ini is in same location as mailproxy.py
