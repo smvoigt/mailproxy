@@ -1,3 +1,4 @@
+import asyncio
 import configparser
 import logging
 import os
@@ -10,11 +11,11 @@ import servicemanager
 import win32event
 import win32service
 import traceback
+import selectors
 
 from aiosmtpd.controller import Controller
 
 __version__ = '1.0.3'
-
 
 class SMTPProxy(win32serviceutil.ServiceFramework):
     _svc_name_ = 'SMTPProxy'
@@ -78,6 +79,9 @@ class SMTPProxy(win32serviceutil.ServiceFramework):
         else:
             auth = None
 
+        selector = selectors.SelectSelector()
+        loop = asyncio.SelectorEventLoop(selector)
+
         logging.debug("Loading controller")
         controller = Controller(
             MailProxyHandler(
@@ -87,6 +91,7 @@ class SMTPProxy(win32serviceutil.ServiceFramework):
                 use_ssl=config.getboolean('remote', 'use_ssl', fallback=False),
                 starttls=config.getboolean('remote', 'starttls', fallback=False),
             ),
+            loop=loop,
             hostname=config.get('local', 'host', fallback='127.0.0.1'),
             port=config.getint('local', 'port', fallback=25)
         )
