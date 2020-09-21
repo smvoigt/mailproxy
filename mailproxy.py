@@ -1,51 +1,19 @@
-import asyncio
 import configparser
 import logging
 import os
 import smtplib
 import sys
 from time import sleep
-
-from aiosmtpd.controller import Controller
-
-# From  http://thepythoncorner.com/dev/how-to-create-a-windows-service-in-python/
-
-__version__ = '1.0.3'
-
-'''
-From http://thepythoncorner.com/dev/how-to-create-a-windows-service-in-python/
-
-SMWinservice
-by Davide Mastromatteo
-
-Base class to create winservice in Python
------------------------------------------
-
-Instructions:
-
-1. Just create a new class that inherits from this base class
-2. Define into the new class the variables
-   _svc_name_ = "nameOfWinservice"
-   _svc_display_name_ = "name of the Winservice that will be displayed in scm"
-   _svc_description_ = "description of the Winservice that will be displayed in scm"
-3. Override the three main methods:
-    def start(self) : if you need to do something at the service initialization.
-                      A good idea is to put here the inizialization of the running condition
-    def stop(self)  : if you need to do something just before the service is stopped.
-                      A good idea is to put here the invalidation of the running condition
-    def main(self)  : your actual run loop. Just create a loop based on your running condition
-4. Define the entry point of your module calling the method "parse_command_line" of the new class
-5. Enjoy
-'''
-
 import socket
-
 import win32serviceutil
-
 import servicemanager
 import win32event
 import win32service
-import logging
+import traceback
+
+from aiosmtpd.controller import Controller
+
+__version__ = '1.0.3'
 
 
 class SMTPProxy(win32serviceutil.ServiceFramework):
@@ -55,7 +23,8 @@ class SMTPProxy(win32serviceutil.ServiceFramework):
 
     def __init__(self, args):
         win32serviceutil.ServiceFramework.__init__(self, args)
-        logging.debug("__init__")
+        log_path = os.path.join(sys.path[0], 'smtpproxy.log')
+        logging.basicConfig(filename=log_path, level=logging.INFO)
         self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
 
         socket.setdefaulttimeout(60)
@@ -71,29 +40,34 @@ class SMTPProxy(win32serviceutil.ServiceFramework):
         logging.debug("run")
         self.isAlive = True
         servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
-                              servicemanager.PYS_SERVICE_STARTED, (self._svc_name_, ''))
-        self.main()
+                              servicemanager.PYS_SERVICE_STARTING, (self._svc_name_, ''))
+        try:
+            self.main()
+        except Exception as e:
+            logging.error(traceback.print_stack())
+            logging.error(str(e))
+
         win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)
 
     def main(self):
-        logging.debug(":main")
         logging.debug("SMPTProxy starting")
-        while True:
-            logging.debug("Sleeping")
-            sleep(2)
-        if len(sys.argv) == 2:
-            config_path = sys.argv[1]
-        else:
-            config_path = os.path.join(
-                sys.path[0],
-                'config.ini'
-            )
-        logging.debug(f"Config: ${config_path}")
+
+        config_path = os.path.join(
+            sys.path[0],
+            'config.ini'
+        )
+        logging.info(f"Loading Config: {config_path}")
         if not os.path.exists(config_path):
             raise Exception("Config file not found: {}".format(config_path))
 
         config = configparser.ConfigParser()
         config.read(config_path)
+
+        servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
+                              servicemanager.PYS_SERVICE_STARTED,
+                              (self._svc_name_, ": Listening on %s:%s" % (
+                                  config.get('local', 'host', fallback='127.0.0.1'),
+                                  config.get('local', 'port', fallback=25))))
 
         use_auth = config.getboolean('remote', 'smtp_auth', fallback=False)
         if use_auth:
@@ -104,6 +78,7 @@ class SMTPProxy(win32serviceutil.ServiceFramework):
         else:
             auth = None
 
+        logging.debug("Loading controller")
         controller = Controller(
             MailProxyHandler(
                 host=config.get('remote', 'host'),
@@ -117,10 +92,13 @@ class SMTPProxy(win32serviceutil.ServiceFramework):
         )
         controller.loop.set_debug(True)
         controller.start()
+        logging.debug("started controller")
         while controller.loop.is_running():
-            if not self.isrunning:
+            if not self.isAlive:
                 controller.stop()
-            sleep(0.2)
+            sleep(0.5)
+
+        logging.debug("Finished")
 
 
 class MailProxyHandler:
@@ -178,16 +156,9 @@ class MailProxyHandler:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(filename='D:\\temp\\smtpproxy.log', level=logging.DEBUG)
-    logging.debug("Starting")
-    logging.debug(f"Num args = ${sys.argv}")
-    # pywin32_postinstall.py -install
-
     if len(sys.argv) == 1:
         servicemanager.Initialize()
         servicemanager.PrepareToHostSingle(SMTPProxy)
         servicemanager.StartServiceCtrlDispatcher()
     else:
         win32serviceutil.HandleCommandLine(SMTPProxy)
-
-    logging.debug("Done")
