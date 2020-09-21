@@ -39,9 +39,9 @@ class MailProxyHandler:
         refused = {}
         try:
             if self._use_ssl:
-                s = smtplib.SMTP_SSL()
+                s = smtplib.SMTP_SSL(self._host, self._port)
             else:
-                s = smtplib.SMTP()
+                s = smtplib.SMTP(self._host, self._port)
             s.connect(self._host, self._port)
             if self._starttls:
                 s.starttls()
@@ -66,6 +66,7 @@ class MailProxyHandler:
 
 
 if __name__ == '__main__':
+    # logging.basicConfig(level=logging.DEBUG)
     if len(sys.argv) == 2:
         config_path = sys.argv[1]
     else:
@@ -99,6 +100,7 @@ if __name__ == '__main__':
         hostname=config.get('local', 'host', fallback='127.0.0.1'),
         port=config.getint('local', 'port', fallback=25)
     )
+    # controller.loop.set_debug(True)
     controller.start()
     while controller.loop.is_running():
         sleep(0.2)
